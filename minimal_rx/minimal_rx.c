@@ -16,7 +16,7 @@
 #include <rte_mbuf.h>
 
 #define RX_RING_SIZE 1024
-#define TX_RING_SIZE 0 
+#define TX_RING_SIZE 1024
 
 #define NUM_MBUFS 8191
 #define MBUF_CACHE_SIZE 250
@@ -30,7 +30,7 @@ uint64_t packet_count = 0;
 
 static const struct rte_eth_conf port_conf_default = {
 	.rxmode = {
-		.max_rx_pkt_len = RTE_ETHER_MAX_LEN,
+//		.max_rx_pkt_len = RTE_ETHER_MAX_LEN,
 	},
 };
 
@@ -71,11 +71,21 @@ static inline int
 port_init(uint16_t port, struct rte_mempool *mbuf_pool)
 {
 	struct rte_eth_conf port_conf = port_conf_default;
-	const uint16_t rx_rings = 1, tx_rings = 0;
+	const uint16_t rx_rings = 1, tx_rings = 1;
 	uint16_t nb_rxd = RX_RING_SIZE;
 	uint16_t nb_txd = TX_RING_SIZE;
+
 	int retval;
 	uint16_t q;
+
+    struct rte_eth_dev_info dev_info;
+    struct rte_eth_txconf txconf;
+
+    rte_eth_dev_info_get(port, &dev_info);
+    if (dev_info.tx_offload_capa & DEV_TX_OFFLOAD_MBUF_FAST_FREE)
+        port_conf.txmode.offloads |=
+                DEV_TX_OFFLOAD_MBUF_FAST_FREE;
+
 
 	if (!rte_eth_dev_is_valid_port(port))
 		return -1;
@@ -97,7 +107,21 @@ port_init(uint16_t port, struct rte_mempool *mbuf_pool)
 			return retval;
 	}
 
-	/* Start the Ethernet port. */
+
+    txconf = dev_info.default_txconf;
+    txconf.offloads = port_conf.txmode.offloads;
+
+
+    //Allocate and set up 1 TX queue
+    for (q = 0; q < tx_rings; q++) {
+        retval = rte_eth_tx_queue_setup(port, q, nb_txd,
+                                        rte_eth_dev_socket_id(port), &txconf);
+        if (retval < 0)
+            return retval;
+    }
+
+
+    /* Start the Ethernet port. */
 	retval = rte_eth_dev_start(port);
 	if (retval < 0)
 		return retval;
